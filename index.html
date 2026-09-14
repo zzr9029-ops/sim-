@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>SIM管理</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+  :root {
+    --ink: #16241f;
+    --paper: #f6f4ee;
+    --card: #ffffff;
+    --line-navy: #23324a;
+    --signal: #2f8f5b;
+    --signal-dim: #d7ead9;
+    --amber: #b5790a;
+    --amber-dim: #f5e6c8;
+    --alert: #b3402f;
+    --alert-dim: #f6ddd7;
+    --muted: #6b7570;
+    --radius: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  #sim-app {
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 0 0 96px 0;
+    max-width: 480px;
+    margin: 0 auto;
+    position: relative;
+  }
+
+  .sim-header {
+    padding: 16px 16px 10px;
+    border-bottom: 2px solid var(--line-navy);
+    background: var(--paper);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+
+  .sim-header .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    margin: 0 0 4px;
+  }
+
+  .sim-header h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  .sim-header .count {
+    color: var(--signal);
+  }
+
+  .sim-list {
+    padding: 10px 12px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .sim-empty {
+    margin-top: 40px;
+    text-align: center;
+    color: var(--muted);
+    padding: 0 30px;
+    line-height: 1.7;
+  }
+
+  .sim-group {
+    margin-bottom: 4px;
+  }
+  .sim-group-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--line-navy);
+    padding: 4px 2px 6px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .sim-group-count {
+    font-weight: 400;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .sim-group-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .sim-card {
+    background: var(--card);
+    border: 1px solid #e4e1d6;
+    border-left: 4px solid var(--line-navy);
+    border-radius: 10px;
+    padding: 9px 12px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease;
+  }
+  .sim-card:active { box-shadow: none; }
+  .sim-card.status-soon { border-left-color: var(--amber); }
+  .sim-card.status-over { border-left-color: var(--alert); }
+
+  .sim-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .sim-card-name {
+    font-weight: 700;
+    font-size: 14.5px;
+    line-height: 1.3;
+  }
+
+  .sim-card-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .sim-badge {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    background: var(--signal-dim);
+    color: var(--signal);
+    font-weight: 600;
+  }
+  .sim-badge.soon { background: var(--amber-dim); color: var(--amber); }
+  .sim-badge.over { background: var(--alert-dim); color: var(--alert); }
+
+  .sim-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 12px;
+    row-gap: 2px;
+    margin-top: 5px;
+    font-size: 12px;
+    color: var(--ink);
+  }
+  .sim-card-meta span.label {
+    color: var(--muted);
+    margin-right: 3px;
+  }
+
+  .sim-detail {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #d9d5c8;
+    font-size: 13px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    row-gap: 6px;
+    column-gap: 10px;
+  }
+  .sim-detail .k { color: var(--muted); }
+  .sim-detail .v { text-align: right; word-break: break-all; }
+
+  .sim-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .sim-actions button {
+    flex: 1;
+    padding: 9px 0;
+    border-radius: 10px;
+    border: 1px solid #d9d5c8;
+    background: var(--paper);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .sim-actions button.danger { color: var(--alert); border-color: var(--alert-dim); }
+
+  .sim-fab {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 22px;
+    max-width: 480px;
+    width: calc(100% - 40px);
+    background: var(--line-navy);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 15px 0;
+    font-size: 15px;
+    font-weight: 700;
+    box-shadow: 0 6px 18px rgba(22,36,31,0.25);
+    z-index: 6;
+  }
+
+  .sim-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(22,36,31,0.4);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 20;
+  }
+  .sim-sheet {
+    background: var(--paper);
+    width: 100%;
+    max-width: 480px;
+    border-radius: 20px 20px 0 0;
+    padding: 18px 20px 0;
+    max-height: 80vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .sim-sheet h2 {
+    margin: 0 0 14px;
+    font-size: 18px;
+  }
+  .sim-field {
+    margin-bottom: 12px;
+  }
+  .sim-field label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .sim-field input, .sim-field select {
+    width: 100%;
+    padding: 10px 11px;
+    border-radius: 9px;
+    border: 1px solid #d9d5c8;
+    background: #fff;
+    font-size: 14px;
+    color: var(--ink);
+    font-family: inherit;
+  }
+  .sim-sheet-actions {
+    display: flex;
+    gap: 10px;
+    padding: 12px 0 20px;
+    margin-top: 6px;
+    position: sticky;
+    bottom: 0;
+    background: var(--paper);
+    border-top: 1px solid #e4e1d6;
+  }
+  .sim-sheet-actions button {
+    flex: 1;
+    padding: 12px 0;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    border: none;
+  }
+  .sim-sheet-actions .save { background: var(--line-navy); color: #fff; }
+  .sim-sheet-actions .cancel { background: #e9e6db; color: var(--ink); }
+
+  .sim-loading, .sim-error {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<div id="sim-app">
+  <div class="sim-header">
+    <p class="eyebrow">回線をまとめて把握</p>
+    <h1>SIM管理 <span class="count" id="sim-count"></span></h1>
+  </div>
+  <div class="sim-list" id="sim-list"></div>
+</div>
+
+<button class="sim-fab" id="sim-add-btn">+ SIMを追加</button>
+
+<script>
+(function () {
+  const STORAGE_KEY = "sims:list";
+  const listEl = document.getElementById("sim-list");
+  const countEl = document.getElementById("sim-count");
+  const addBtn = document.getElementById("sim-add-btn");
+  let sims = [];
+  let expandedId = null;
+
+  const FIELD_DEFS = [
+    { key: "carrier", label: "キャリア", type: "text", placeholder: "例: 楽天モバイル" },
+    { key: "device", label: "回線名/端末", type: "text", placeholder: "例: メイン(iPhone)" },
+    { key: "phone", label: "電話番号", type: "text", placeholder: "090-xxxx-xxxx" },
+    { key: "simType", label: "SIM種類", type: "select", options: ["物理SIM", "eSIM"] },
+    { key: "plan", label: "プラン名", type: "text", placeholder: "例: Rakuten最強プラン" },
+    { key: "fee", label: "月額料金(円)", type: "number", placeholder: "1078" },
+    { key: "data", label: "データ容量", type: "text", placeholder: "例: 3GB" },
+    { key: "contractDate", label: "契約日", type: "date" },
+    { key: "renewMonth", label: "更新月", type: "text", placeholder: "例: 4月 / なし" },
+    { key: "cancelDeadline", label: "解約期限", type: "text", placeholder: "任意" },
+    { key: "note", label: "備考", type: "text", placeholder: "任意" }
+  ];
+
+  function uid() {
+    return "sim_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+  }
+
+  function plus180(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(dateStr + "T00:00:00");
+    if (isNaN(d.getTime())) return null;
+    d.setDate(d.getDate() + 180);
+    return d;
+  }
+
+  function fmtDate(d) {
+    if (!d) return "";
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function daysUntil(d) {
+    if (!d) return null;
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const target = new Date(d);
+    target.setHours(0, 0, 0, 0);
+    return Math.round((target - now) / 86400000);
+  }
+
+  function statusFor(sim) {
+    const target = plus180(sim.contractDate);
+    if (!target) return { cls: "", label: "" };
+    const diff = daysUntil(target);
+    if (diff < 0) return { cls: "over", label: `${fmtDate(target)} (期限超過)` };
+    if (diff <= 30) return { cls: "soon", label: `${fmtDate(target)} (あと${diff}日)` };
+    return { cls: "", label: fmtDate(target) };
+  }
+
+  async function load() {
+    listEl.innerHTML = '<div class="sim-loading">読み込み中...</div>';
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      sims = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      sims = [];
+    }
+    const deduped = dedupe(sims);
+    if (deduped.length !== sims.length) {
+      sims = deduped;
+      await persist();
+    }
+    render();
+  }
+
+  function dedupe(list) {
+    const seen = new Set();
+    const result = [];
+    list.forEach((sim) => {
+      const fingerprint = FIELD_DEFS.map((f) => sim[f.key] || "").join("|");
+      if (seen.has(fingerprint)) return;
+      seen.add(fingerprint);
+      result.push(sim);
+    });
+    return result;
+  }
+
+  async function persist() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sims));
+      return true;
+    } catch (e) {
+      console.error("保存に失敗しました", e);
+      alert("保存に失敗しました。ブラウザのプライベート/シークレットモードで開いていないか確認してください。");
+      return false;
+    }
+  }
+
+  function render() {
+    countEl.textContent = sims.length ? `(${sims.length}件)` : "";
+
+    if (!sims.length) {
+      listEl.innerHTML = `<div class="sim-empty">まだSIMが登録されていません。<br>右下の「+ SIMを追加」から最初の1件を登録しましょう。</div>`;
+      return;
+    }
+
+    const sorted = [...sims].sort((a, b) => {
+      const da = plus180(a.contractDate);
+      const db = plus180(b.contractDate);
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return da - db;
+    });
+
+    const groups = new Map();
+    sorted.forEach((sim) => {
+      const key = sim.carrier || "未設定";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(sim);
+    });
+    const groupNames = [...groups.keys()].sort((a, b) => {
+      if (a === "未設定") return 1;
+      if (b === "未設定") return -1;
+      return a.localeCompare(b, "ja");
+    });
+
+    listEl.innerHTML = groupNames.map((name) => {
+      const groupSims = groups.get(name);
+      const cards = groupSims.map((sim) => {
+        const st = statusFor(sim);
+        const isOpen = sim.id === expandedId;
+        return `
+          <div class="sim-card ${st.cls ? "status-" + st.cls : ""}" data-id="${sim.id}">
+            <div class="sim-card-top">
+              <div>
+                <div class="sim-card-name">${escapeHtml(sim.device || sim.plan || sim.phone || "名称未設定")}</div>
+                <div class="sim-card-sub">${escapeHtml(sim.plan || "")}</div>
+              </div>
+              ${st.label ? `<span class="sim-badge ${st.cls}">${st.label}</span>` : ""}
+            </div>
+            <div class="sim-card-meta">
+              ${sim.phone ? `<div>${escapeHtml(sim.phone)}</div>` : ""}
+            </div>
+            ${isOpen ? renderDetail(sim) : ""}
+          </div>
+        `;
+      }).join("");
+      return `
+        <div class="sim-group">
+          <div class="sim-group-title">${escapeHtml(name)} <span class="sim-group-count">${groupSims.length}件</span></div>
+          <div class="sim-group-cards">${cards}</div>
+        </div>
+      `;
+    }).join("");
+
+    listEl.querySelectorAll(".sim-card").forEach((card) => {
+      card.addEventListener("click", (e) => {
+        if (e.target.closest("button")) return;
+        const id = card.getAttribute("data-id");
+        expandedId = expandedId === id ? null : id;
+        render();
+      });
+    });
+
+    listEl.querySelectorAll("[data-edit]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openSheet(sims.find((s) => s.id === btn.getAttribute("data-edit")));
+      });
+    });
+    listEl.querySelectorAll("[data-delete]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-delete");
+        sims = sims.filter((s) => s.id !== id);
+        await persist();
+        render();
+      });
+    });
+  }
+
+  function renderDetail(sim) {
+    const rows = FIELD_DEFS
+      .filter((f) => !["carrier", "device", "plan"].includes(f.key))
+      .map((f) => {
+        let val = sim[f.key];
+        if (f.key === "fee" && val !== "" && val != null) val = `¥${Number(val).toLocaleString()}`;
+        return `<div class="k">${f.label}</div><div class="v">${escapeHtml(val || "-")}</div>`;
+      }).join("");
+    return `
+      <div class="sim-detail">
+        ${rows}
+      </div>
+      <div class="sim-actions">
+        <button data-edit="${sim.id}">編集</button>
+        <button class="danger" data-delete="${sim.id}">削除</button>
+      </div>
+    `;
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
+
+  function openSheet(existing) {
+    const isEdit = !!existing;
+    const data = existing ? { ...existing } : { id: uid() };
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "sim-sheet-backdrop";
+    backdrop.innerHTML = `
+      <div class="sim-sheet">
+        <h2>${isEdit ? "SIMを編集" : "SIMを追加"}</h2>
+        <form id="sim-form">
+          ${FIELD_DEFS.map((f) => {
+            const val = data[f.key] != null ? data[f.key] : "";
+            if (f.type === "select") {
+              return `
+                <div class="sim-field">
+                  <label>${f.label}</label>
+                  <select name="${f.key}">
+                    <option value="">選択してください</option>
+                    ${f.options.map((o) => `<option value="${o}" ${val === o ? "selected" : ""}>${o}</option>`).join("")}
+                  </select>
+                </div>`;
+            }
+            return `
+              <div class="sim-field">
+                <label>${f.label}</label>
+                <input type="${f.type}" name="${f.key}" value="${escapeHtml(val)}" placeholder="${f.placeholder || ""}" />
+              </div>`;
+          }).join("")}
+          <div class="sim-sheet-actions">
+            <button type="button" class="cancel" id="sim-cancel">キャンセル</button>
+            <button type="submit" class="save">保存</button>
+          </div>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+
+    const sheetEl = backdrop.querySelector(".sim-sheet");
+    function adjustForKeyboard() {
+      if (!window.visualViewport) return;
+      const vh = window.visualViewport.height;
+      sheetEl.style.maxHeight = Math.round(vh * 0.9) + "px";
+    }
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", adjustForKeyboard);
+      adjustForKeyboard();
+    }
+
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) {
+        if (window.visualViewport) window.visualViewport.removeEventListener("resize", adjustForKeyboard);
+        document.body.removeChild(backdrop);
+      }
+    });
+    backdrop.querySelector("#sim-cancel").addEventListener("click", () => {
+      if (window.visualViewport) window.visualViewport.removeEventListener("resize", adjustForKeyboard);
+      document.body.removeChild(backdrop);
+    });
+    let submitting = false;
+    backdrop.querySelector("#sim-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (submitting) return;
+      submitting = true;
+      const saveBtn = backdrop.querySelector(".save");
+      if (saveBtn) saveBtn.disabled = true;
+      const fd = new FormData(e.target);
+      const record = { id: data.id };
+      FIELD_DEFS.forEach((f) => {
+        record[f.key] = fd.get(f.key) || "";
+      });
+      const idx = sims.findIndex((s) => s.id === record.id);
+      if (idx >= 0) sims[idx] = record;
+      else sims.push(record);
+      const ok = await persist();
+      if (!ok) {
+        submitting = false;
+        if (saveBtn) saveBtn.disabled = false;
+        return;
+      }
+      if (window.visualViewport) window.visualViewport.removeEventListener("resize", adjustForKeyboard);
+      document.body.removeChild(backdrop);
+      expandedId = record.id;
+      render();
+    });
+  }
+
+  addBtn.addEventListener("click", () => openSheet(null));
+
+  load();
+})();
+</script>
+</body>
+</html>
