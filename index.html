@@ -64,6 +64,32 @@
     color: var(--signal);
   }
 
+  .sim-toolbar {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .sim-tool-btn {
+    font-size: 11.5px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid #d9d5c8;
+    background: #fff;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .sim-tool-btn.linked {
+    background: var(--signal-dim);
+    border-color: var(--signal);
+    color: var(--signal);
+  }
+  .sim-link-status {
+    font-size: 11px;
+    color: var(--muted);
+    margin: 6px 2px 0;
+  }
+
   .sim-list {
     padding: 10px 12px 0;
     display: flex;
@@ -285,6 +311,13 @@
   <div class="sim-header">
     <p class="eyebrow">回線をまとめて把握</p>
     <h1>SIM管理 <span class="count" id="sim-count"></span></h1>
+    <div class="sim-toolbar">
+      <button id="sim-link-btn" class="sim-tool-btn">📁 ファイル連携</button>
+      <button id="sim-export-btn" class="sim-tool-btn">📤 書き出し</button>
+      <button id="sim-import-btn" class="sim-tool-btn">📥 読み込み</button>
+      <input type="file" id="sim-import-input" accept="application/json" style="display:none;">
+    </div>
+    <p class="sim-link-status" id="sim-link-status"></p>
   </div>
   <div class="sim-list" id="sim-list"></div>
 </div>
@@ -297,8 +330,15 @@
   const listEl = document.getElementById("sim-list");
   const countEl = document.getElementById("sim-count");
   const addBtn = document.getElementById("sim-add-btn");
+  const linkBtn = document.getElementById("sim-link-btn");
+  const linkStatusEl = document.getElementById("sim-link-status");
+  const exportBtn = document.getElementById("sim-export-btn");
+  const importBtn = document.getElementById("sim-import-btn");
+  const importInput = document.getElementById("sim-import-input");
   let sims = [];
   let expandedId = null;
+  let fileHandle = null;
+  const FILE_SYSTEM_SUPPORTED = "showSaveFilePicker" in window;
 
   const FIELD_DEFS = [
     { key: "carrier", label: "キャリア", type: "text", placeholder: "例: 楽天モバイル" },
@@ -352,6 +392,162 @@
     return { cls: "", label: fmtDate(target) };
   }
 
+  // --- ファイル連携(File System Access API) ---
+  const DB_NAME = "sim-manager-db";
+  const DB_STORE = "handles";
+  const HANDLE_KEY = "dataFileHandle";
+
+  function idbOpen() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function idbSet(key, value) {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      tx.objectStore(DB_STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function idbGet(key) {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readonly");
+      const req = tx.objectStore(DB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function updateLinkStatus(name, needsPermission) {
+    if (!FILE_SYSTEM_SUPPORTED) {
+      linkBtn.style.display = "none";
+      linkStatusEl.textContent = "";
+      return;
+    }
+    if (!fileHandle) {
+      linkBtn.classList.remove("linked");
+      linkBtn.textContent = "📁 ファイル連携";
+      linkStatusEl.textContent = "";
+    } else if (needsPermission) {
+      linkBtn.classList.remove("linked");
+      linkBtn.textContent = "📁 再連携が必要";
+      linkStatusEl.textContent = `${name || "データファイル"} への書き込み許可を再度確認してください(タップ)`;
+    } else {
+      linkBtn.classList.add("linked");
+      linkBtn.textContent = "📁 連携中";
+      linkStatusEl.textContent = `保存すると自動で「${name}」に書き込まれます`;
+    }
+  }
+
+  async function tryRestoreFileHandle() {
+    if (!FILE_SYSTEM_SUPPORTED) return;
+    try {
+      const handle = await idbGet(HANDLE_KEY);
+      if (!handle) return;
+      fileHandle = handle;
+      const perm = await handle.queryPermission({ mode: "readwrite" });
+      updateLinkStatus(handle.name, perm !== "granted");
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function linkDataFile() {
+    if (!FILE_SYSTEM_SUPPORTED) return;
+    try {
+      let handle;
+      if (fileHandle) {
+        // 既にリンク済みなら権限を再取得
+        const perm = await fileHandle.requestPermission({ mode: "readwrite" });
+        if (perm === "granted") {
+          updateLinkStatus(fileHandle.name, false);
+          await writeToFile();
+          return;
+        }
+      }
+      const choice = confirm("新しいファイルを作成しますか?\n(OK=新規作成 / キャンセル=既存のファイルを選ぶ)");
+      if (choice) {
+        handle = await window.showSaveFilePicker({
+          suggestedName: "sim-data.json",
+          types: [{ description: "JSON", accept: { "application/json": [".json"] } }]
+        });
+      } else {
+        const handles = await window.showOpenFilePicker({
+          types: [{ description: "JSON", accept: { "application/json": [".json"] } }]
+        });
+        handle = handles[0];
+        const file = await handle.getFile();
+        const text = await file.text();
+        try {
+          const parsed = JSON.parse(text);
+          if (Array.isArray(parsed) && parsed.length) {
+            sims = dedupe([...sims, ...parsed]);
+          }
+        } catch (e) { /* 空ファイル等は無視 */ }
+      }
+      fileHandle = handle;
+      await idbSet(HANDLE_KEY, handle);
+      await persist();
+      updateLinkStatus(handle.name, false);
+      render();
+    } catch (e) {
+      if (e.name !== "AbortError") console.error(e);
+    }
+  }
+
+  async function writeToFile() {
+    if (!fileHandle || !FILE_SYSTEM_SUPPORTED) return true;
+    try {
+      const perm = await fileHandle.queryPermission({ mode: "readwrite" });
+      if (perm !== "granted") {
+        updateLinkStatus(fileHandle.name, true);
+        return false;
+      }
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(sims, null, 2));
+      await writable.close();
+      return true;
+    } catch (e) {
+      console.error("ファイルへの書き込みに失敗しました", e);
+      return false;
+    }
+  }
+
+  function exportJson() {
+    const blob = new Blob([JSON.stringify(sims, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `sim-data-${today}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importJsonFile(file) {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) throw new Error("形式が不正です");
+      const merge = confirm(`${parsed.length}件のSIMを読み込みます。\nOK=今のデータに追加 / キャンセル=今のデータを置き換える`);
+      sims = merge ? dedupe([...sims, ...parsed]) : parsed;
+      await persist();
+      render();
+    } catch (e) {
+      alert("読み込みに失敗しました。正しいJSONファイルか確認してください。");
+      console.error(e);
+    }
+  }
+  // --- ここまでファイル連携 ---
+
   async function load() {
     listEl.innerHTML = '<div class="sim-loading">読み込み中...</div>';
     try {
@@ -383,12 +579,15 @@
   async function persist() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(sims));
-      return true;
     } catch (e) {
       console.error("保存に失敗しました", e);
       alert("保存に失敗しました。ブラウザのプライベート/シークレットモードで開いていないか確認してください。");
       return false;
     }
+    if (fileHandle) {
+      await writeToFile();
+    }
+    return true;
   }
 
   function render() {
@@ -587,7 +786,17 @@
   }
 
   addBtn.addEventListener("click", () => openSheet(null));
+  linkBtn.addEventListener("click", () => linkDataFile());
+  exportBtn.addEventListener("click", () => exportJson());
+  importBtn.addEventListener("click", () => importInput.click());
+  importInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (file) importJsonFile(file);
+    importInput.value = "";
+  });
 
+  tryRestoreFileHandle();
+  if (!FILE_SYSTEM_SUPPORTED) updateLinkStatus();
   load();
 })();
 </script>
