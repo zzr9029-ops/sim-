@@ -360,10 +360,8 @@
     { key: "simType", label: "SIM種類", type: "select", options: ["物理SIM", "eSIM"] },
     { key: "plan", label: "プラン名", type: "text", placeholder: "例: Rakuten最強プラン" },
     { key: "fee", label: "月額料金(円)", type: "number", placeholder: "1078" },
-    { key: "data", label: "データ容量", type: "text", placeholder: "例: 3GB" },
     { key: "contractDate", label: "契約日", type: "date" },
-    { key: "renewMonth", label: "更新月", type: "text", placeholder: "例: 4月 / なし" },
-    { key: "cancelDeadline", label: "解約期限", type: "text", placeholder: "任意" },
+    { key: "periodDays", label: "期限までの日数(空欄=180)", type: "number", placeholder: "180" },
     { key: "note", label: "備考", type: "text", placeholder: "任意" }
   ];
 
@@ -371,11 +369,12 @@
     return "sim_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
   }
 
-  function plus180(dateStr) {
-    if (!dateStr) return null;
-    const d = new Date(dateStr + "T00:00:00");
+  function dueDate(sim) {
+    if (!sim.contractDate) return null;
+    const d = new Date(sim.contractDate + "T00:00:00");
     if (isNaN(d.getTime())) return null;
-    d.setDate(d.getDate() + 180);
+    const n = parseInt(sim.periodDays, 10);
+    d.setDate(d.getDate() + (Number.isFinite(n) ? n : 180));
     return d;
   }
 
@@ -397,7 +396,7 @@
   }
 
   function statusFor(sim) {
-    const target = plus180(sim.contractDate);
+    const target = dueDate(sim);
     if (!target) return { cls: "", label: "" };
     const diff = daysUntil(target);
     if (diff < 0) return { cls: "over", label: `${fmtDate(target)} (期限超過)` };
@@ -612,8 +611,8 @@
     }
 
     const sorted = [...sims].sort((a, b) => {
-      const da = plus180(a.contractDate);
-      const db = plus180(b.contractDate);
+      const da = dueDate(a);
+      const db = dueDate(b);
       if (!da && !db) return 0;
       if (!da) return 1;
       if (!db) return -1;
